@@ -1,0 +1,235 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  name        String
+  documentId  String?      // e-CPF / gov.br id (hash)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  memberships Membership[]
+  proposals   Proposal[]   @relation("ProposalAuthor")
+  comments    Comment[]
+  reviews     ReviewVote[]
+  votes       Vote[]
+  auditLogs   AuditLog[]   @relation("ActorLogs")
+}
+
+enum OrgLevel {
+  NATIONAL
+  STATE
+  MUNICIPAL
+  THEMATIC
+}
+
+model OrgUnit {
+  id        String    @id @default(cuid())
+  name      String
+  slug      String    @unique
+  level     OrgLevel
+  code      String?   // e.g. BR, SP, SP-SAO-PAULO, or thematic code
+  parentId  String?
+  parent    OrgUnit?  @relation("OrgHierarchy", fields: [parentId], references: [id])
+  children  OrgUnit[] @relation("OrgHierarchy")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  proposals Proposal[]
+  sessions  VoteSession[]
+  members   Membership[]
+}
+
+enum Role {
+  FILIADO
+  COORDENADOR
+  DIRETOR
+  EXECUTIVO_NACIONAL
+}
+
+model Membership {
+  id         String   @id @default(cuid())
+  userId     String
+  orgUnitId  String
+  role       Role
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+  orgUnit    OrgUnit  @relation(fields: [orgUnitId], references: [id])
+
+  @@unique([userId, orgUnitId])
+}
+
+enum ProposalStatus {
+  DRAFT
+  OPEN
+  MERGED
+  REJECTED
+  ARCHIVED
+}
+
+model Proposal {
+  id             String            @id @default(cuid())
+  title          String
+  slug           String
+  orgUnitId      String
+  authorId       String
+  status         ProposalStatus    @default(OPEN)
+  baseProposalId String?           // for forks
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  orgUnit        OrgUnit           @relation(fields: [orgUnitId], references: [id])
+  author         User              @relation("ProposalAuthor", fields: [authorId], references: [id])
+  versions       ProposalVersion[]
+  issues         Issue[]
+  incomingPRs    PullRequest[]     @relation("IncomingPR", references: [id])
+  outgoingPRs    PullRequest[]     @relation("OutgoingPR", references: [id])
+
+  @@unique([orgUnitId, slug])
+}
+
+model ProposalVersion {
+  id           String   @id @default(cuid())
+  proposalId   String
+  version      Int
+  contentMd    String   // markdown content
+  createdById  String
+  createdAt    DateTime @default(now())
+  proposal     Proposal @relation(fields: [proposalId], references: [id])
+  createdBy    User     @relation(fields: [createdById], references: [id])
+
+  @@unique([proposalId, version])
+}
+
+enum IssueStatus {
+  OPEN
+  CLOSED
+}
+
+model Issue {
+  id          String      @id @default(cuid())
+  proposalId  String
+  title       String
+  body        String
+  status      IssueStatus @default(OPEN)
+  authorId    String
+  createdAt   DateTime    @default(now())
+  proposal    Proposal    @relation(fields: [proposalId], references: [id])
+  author      User        @relation(fields: [authorId], references: [id])
+  comments    Comment[]
+}
+
+enum PRStatus {
+  OPEN
+  MERGED
+  CLOSED
+}
+
+model PullRequest {
+  id             String    @id @default(cuid())
+  fromProposalId String
+  toProposalId   String
+  title          String
+  description    String
+  status         PRStatus  @default(OPEN)
+  createdById    String
+  createdAt      DateTime  @default(now())
+  fromProposal   Proposal  @relation("OutgoingPR", fields: [fromProposalId], references: [id])
+  toProposal     Proposal  @relation("IncomingPR", fields: [toProposalId], references: [id])
+  createdBy      User      @relation(fields: [createdById], references: [id])
+  reviews        ReviewVote[]
+  comments       Comment[]
+}
+
+enum ReviewValue {
+  DISLIKE
+  NEUTRAL
+  LIKE
+}
+
+model ReviewVote {
+  id        String       @id @default(cuid())
+  prId      String
+  userId    String
+  value     ReviewValue
+  reason    String?
+  createdAt DateTime     @default(now())
+  pr        PullRequest  @relation(fields: [prId], references: [id])
+  user      User         @relation(fields: [userId], references: [id])
+
+  @@unique([prId, userId])
+}
+
+model Comment {
+  id        String      @id @default(cuid())
+  body      String
+  authorId  String
+  issueId   String?
+  prId      String?
+  parentId  String?
+  createdAt DateTime    @default(now())
+  author    User        @relation(fields: [authorId], references: [id])
+  issue     Issue?      @relation(fields: [issueId], references: [id])
+  pr        PullRequest?@relation(fields: [prId], references: [id])
+  parent    Comment?    @relation("Thread", fields: [parentId], references: [id])
+  children  Comment[]   @relation("Thread")
+}
+
+enum VoteRule {
+  ONE_MEMBER_ONE_VOTE
+  WEIGHT_BY_ROLE
+  WEIGHT_BY_DELEGATE
+}
+
+enum VoteChoice {
+  YES
+  NO
+  ABSTAIN
+}
+
+model VoteSession {
+  id         String    @id @default(cuid())
+  orgUnitId  String
+  title      String
+  scope      String    // PROPOSAL | ISSUE | PR | RESOLUTION
+  subjectId  String
+  rule       VoteRule
+  startsAt   DateTime
+  endsAt     DateTime
+  createdById String
+  createdAt  DateTime  @default(now())
+  orgUnit    OrgUnit   @relation(fields: [orgUnitId], references: [id])
+  createdBy  User      @relation(fields: [createdById], references: [id])
+  votes      Vote[]
+}
+
+model Vote {
+  id          String      @id @default(cuid())
+  sessionId   String
+  userId      String
+  choice      VoteChoice
+  weight      Int         @default(1)
+  justification String?
+  createdAt   DateTime    @default(now())
+  session     VoteSession @relation(fields: [sessionId], references: [id])
+  user        User        @relation(fields: [userId], references: [id])
+
+  @@unique([sessionId, userId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  action    String
+  target    String   // e.g., Proposal:123
+  metadata  Json
+  createdAt DateTime @default(now())
+  actor     User     @relation("ActorLogs", fields: [actorId], references: [id])
+  @@index([createdAt])
+}
+
