@@ -8,18 +8,33 @@ datasource db {
 }
 
 model User {
-  id          String       @id @default(cuid())
-  email       String       @unique
+  id          String         @id @default(cuid())
+  email       String         @unique
   name        String
-  documentId  String?      // e-CPF / gov.br id (hash)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  documentId  String?        // e-CPF / gov.br id (hash)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
   memberships Membership[]
-  proposals   Proposal[]   @relation("ProposalAuthor")
+  proposals   Proposal[]     @relation("ProposalAuthor")
   comments    Comment[]
   reviews     ReviewVote[]
   votes       Vote[]
-  auditLogs   AuditLog[]   @relation("ActorLogs")
+  auditLogs   AuditLog[]     @relation("ActorLogs")
+  // Relacionado ao ProposalBranch
+  branches    ProposalBranch[]
+  // Campos Adicionados
+  delegationsFrom Delegation[]     @relation("DelegatedFrom")
+  delegationsTo   Delegation[]     @relation("DelegatedTo")
+  watches         Watch[]
+  notifications   Notification[]
+  wikiVersions    WikiVersion[]
+  reputation      UserReputation?
+  badges          UserBadge[]
+  // Relacionamentos faltantes
+  proposalVersionsCreated ProposalVersion[]
+  issuesAuthored          Issue[]
+  pullRequestsCreated     PullRequest[]
+  voteSessionsCreated     VoteSession[]
 }
 
 enum OrgLevel {
@@ -30,19 +45,24 @@ enum OrgLevel {
 }
 
 model OrgUnit {
-  id        String    @id @default(cuid())
+  id        String       @id @default(cuid())
   name      String
-  slug      String    @unique
+  slug      String       @unique
   level     OrgLevel
-  code      String?   // e.g. BR, SP, SP-SAO-PAULO, or thematic code
+  code      String?      // e.g. BR, SP, SP-SAO-PAULO, or thematic code
   parentId  String?
-  parent    OrgUnit?  @relation("OrgHierarchy", fields: [parentId], references: [id])
-  children  OrgUnit[] @relation("OrgHierarchy")
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  parent    OrgUnit?     @relation("OrgHierarchy", fields: [parentId], references: [id])
+  children  OrgUnit[]    @relation("OrgHierarchy")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
   proposals Proposal[]
   sessions  VoteSession[]
   members   Membership[]
+  // Campos Adicionados
+  delegations Delegation[]
+  labels      Label[]
+  milestones  Milestone[]
+  wikiPages   WikiPage[]
 }
 
 enum Role {
@@ -53,14 +73,14 @@ enum Role {
 }
 
 model Membership {
-  id         String   @id @default(cuid())
-  userId     String
-  orgUnitId  String
-  role       Role
-  active     Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id])
-  orgUnit    OrgUnit  @relation(fields: [orgUnitId], references: [id])
+  id        String   @id @default(cuid())
+  userId    String
+  orgUnitId String
+  role      Role
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  orgUnit   OrgUnit  @relation(fields: [orgUnitId], references: [id])
 
   @@unique([userId, orgUnitId])
 }
@@ -74,36 +94,59 @@ enum ProposalStatus {
 }
 
 model Proposal {
-  id             String            @id @default(cuid())
+  id             String           @id @default(cuid())
   title          String
   slug           String
   orgUnitId      String
   authorId       String
-  status         ProposalStatus    @default(OPEN)
-  baseProposalId String?           // for forks
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  orgUnit        OrgUnit           @relation(fields: [orgUnitId], references: [id])
-  author         User              @relation("ProposalAuthor", fields: [authorId], references: [id])
+  status         ProposalStatus   @default(OPEN)
+  baseProposalId String?          // for forks
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  orgUnit        OrgUnit          @relation(fields: [orgUnitId], references: [id])
+  author         User             @relation("ProposalAuthor", fields: [authorId], references: [id])
   versions       ProposalVersion[]
   issues         Issue[]
-  incomingPRs    PullRequest[]     @relation("IncomingPR", references: [id])
-  outgoingPRs    PullRequest[]     @relation("OutgoingPR", references: [id])
+  incomingPRs    PullRequest[]    @relation("IncomingPR")
+  outgoingPRs    PullRequest[]    @relation("OutgoingPR")
+  // Relacionado ao ProposalBranch
+  branches       ProposalBranch[]
+  // Campos Adicionados
+  labels         ProposalLabel[]
+  milestoneId    String?
+  milestone      Milestone?       @relation(fields: [milestoneId], references: [id])
 
   @@unique([orgUnitId, slug])
 }
 
 model ProposalVersion {
-  id           String   @id @default(cuid())
-  proposalId   String
-  version      Int
-  contentMd    String   // markdown content
-  createdById  String
-  createdAt    DateTime @default(now())
-  proposal     Proposal @relation(fields: [proposalId], references: [id])
-  createdBy    User     @relation(fields: [createdById], references: [id])
+  id            String           @id @default(cuid())
+  proposalId    String
+  version       Int
+  contentMd     String           // markdown content
+  createdById   String
+  createdAt     DateTime         @default(now())
+  proposal      Proposal         @relation(fields: [proposalId], references: [id])
+  createdBy     User             @relation(fields: [createdById], references: [id])
+  // Campo adicionado para completar a relação com ProposalBranch
+  headOfBranches ProposalBranch[] @relation("BranchHead")
 
   @@unique([proposalId, version])
+}
+
+// MODELO ADICIONADO
+model ProposalBranch {
+  id            String          @id @default(cuid())
+  proposalId    String
+  name          String          // main, develop, feature/nova-ideia
+  headVersionId String          // aponta para a última versão desta branch
+  createdById   String
+  createdAt     DateTime        @default(now())
+  proposal      Proposal        @relation(fields: [proposalId], references: [id])
+  headVersion   ProposalVersion @relation("BranchHead", fields: [headVersionId], references: [id])
+  createdBy     User            @relation(fields: [createdById], references: [id])
+
+  @@unique([proposalId, name])
 }
 
 enum IssueStatus {
@@ -112,16 +155,18 @@ enum IssueStatus {
 }
 
 model Issue {
-  id          String      @id @default(cuid())
-  proposalId  String
-  title       String
-  body        String
-  status      IssueStatus @default(OPEN)
-  authorId    String
-  createdAt   DateTime    @default(now())
-  proposal    Proposal    @relation(fields: [proposalId], references: [id])
-  author      User        @relation(fields: [authorId], references: [id])
-  comments    Comment[]
+  id         String      @id @default(cuid())
+  proposalId String
+  title      String
+  body       String
+  status     IssueStatus @default(OPEN)
+  authorId   String
+  createdAt  DateTime    @default(now())
+  proposal   Proposal    @relation(fields: [proposalId], references: [id])
+  author     User        @relation(fields: [authorId], references: [id])
+  comments   Comment[]
+  // Campo Adicionado
+  labels     IssueLabel[]
 }
 
 enum PRStatus {
@@ -131,17 +176,17 @@ enum PRStatus {
 }
 
 model PullRequest {
-  id             String    @id @default(cuid())
+  id             String       @id @default(cuid())
   fromProposalId String
   toProposalId   String
   title          String
   description    String
-  status         PRStatus  @default(OPEN)
+  status         PRStatus     @default(OPEN)
   createdById    String
-  createdAt      DateTime  @default(now())
-  fromProposal   Proposal  @relation("OutgoingPR", fields: [fromProposalId], references: [id])
-  toProposal     Proposal  @relation("IncomingPR", fields: [toProposalId], references: [id])
-  createdBy      User      @relation(fields: [createdById], references: [id])
+  createdAt      DateTime     @default(now())
+  fromProposal   Proposal     @relation("OutgoingPR", fields: [fromProposalId], references: [id])
+  toProposal     Proposal     @relation("IncomingPR", fields: [toProposalId], references: [id])
+  createdBy      User         @relation(fields: [createdById], references: [id])
   reviews        ReviewVote[]
   comments       Comment[]
 }
@@ -153,31 +198,55 @@ enum ReviewValue {
 }
 
 model ReviewVote {
-  id        String       @id @default(cuid())
+  id        String      @id @default(cuid())
   prId      String
   userId    String
   value     ReviewValue
   reason    String?
-  createdAt DateTime     @default(now())
-  pr        PullRequest  @relation(fields: [prId], references: [id])
-  user      User         @relation(fields: [userId], references: [id])
+  createdAt DateTime    @default(now())
+  pr        PullRequest @relation(fields: [prId], references: [id])
+  user      User        @relation(fields: [userId], references: [id])
 
   @@unique([prId, userId])
 }
 
 model Comment {
-  id        String      @id @default(cuid())
+  id        String       @id @default(cuid())
   body      String
   authorId  String
   issueId   String?
   prId      String?
   parentId  String?
-  createdAt DateTime    @default(now())
-  author    User        @relation(fields: [authorId], references: [id])
-  issue     Issue?      @relation(fields: [issueId], references: [id])
-  pr        PullRequest?@relation(fields: [prId], references: [id])
-  parent    Comment?    @relation("Thread", fields: [parentId], references: [id])
-  children  Comment[]   @relation("Thread")
+  createdAt DateTime     @default(now())
+  author    User         @relation(fields: [authorId], references: [id])
+  issue     Issue?       @relation(fields: [issueId], references: [id])
+  pr        PullRequest? @relation(fields: [prId], references: [id])
+  parent    Comment?     @relation("Thread", fields: [parentId], references: [id])
+  children  Comment[]    @relation("Thread")
+}
+
+// NOVOS ENUMS ADICIONADOS
+enum NotificationType {
+  MENTION
+  COMMENT
+  STATUS_CHANGE
+  VOTE_STARTED
+  VOTE_ENDING_SOON
+  PR_REVIEW_REQUEST
+}
+
+enum VoteRound {
+  FIRST_READING // Primeira leitura - aprovação geral
+  AMENDMENT // Rodada de emendas
+  FINAL_VOTE // Votação final
+}
+
+enum BadgeType {
+  FIRST_PROPOSAL
+  ACTIVE_VOTER
+  CONSENSUS_BUILDER
+  CAREFUL_REVIEWER
+  MENTOR
 }
 
 enum VoteRule {
@@ -193,34 +262,209 @@ enum VoteChoice {
 }
 
 model VoteSession {
-  id         String    @id @default(cuid())
-  orgUnitId  String
-  title      String
-  scope      String    // PROPOSAL | ISSUE | PR | RESOLUTION
-  subjectId  String
-  rule       VoteRule
-  startsAt   DateTime
-  endsAt     DateTime
+  id          String   @id @default(cuid())
+  orgUnitId   String
+  title       String
+  scope       String   // PROPOSAL | ISSUE | PR | RESOLUTION
+  subjectId   String
+  rule        VoteRule
+  startsAt    DateTime
+  endsAt      DateTime
   createdById String
-  createdAt  DateTime  @default(now())
-  orgUnit    OrgUnit   @relation(fields: [orgUnitId], references: [id])
-  createdBy  User      @relation(fields: [createdById], references: [id])
-  votes      Vote[]
+  createdAt   DateTime @default(now())
+  orgUnit     OrgUnit  @relation(fields: [orgUnitId], references: [id])
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  votes       Vote[]
+  // Campos Adicionados
+  round           VoteRound     @default(FIRST_READING)
+  parentSessionId String?
+  quorum          Int? // % mínimo de participação
+  threshold       Int? // % mínimo para aprovação
+  parentSession   VoteSession?  @relation("SessionRounds", fields: [parentSessionId], references: [id])
+  childSessions   VoteSession[] @relation("SessionRounds")
 }
 
 model Vote {
-  id          String      @id @default(cuid())
-  sessionId   String
-  userId      String
-  choice      VoteChoice
-  weight      Int         @default(1)
+  id            String      @id @default(cuid())
+  sessionId     String
+  userId        String
+  choice        VoteChoice
+  weight        Int         @default(1)
   justification String?
-  createdAt   DateTime    @default(now())
-  session     VoteSession @relation(fields: [sessionId], references: [id])
-  user        User        @relation(fields: [userId], references: [id])
+  createdAt     DateTime    @default(now())
+  session       VoteSession @relation(fields: [sessionId], references: [id])
+  user          User        @relation(fields: [userId], references: [id])
 
   @@unique([sessionId, userId])
 }
+
+// --- NOVOS MODELOS ADICIONADOS ---
+model Delegation {
+  id         String    @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  orgUnitId  String
+  scope      String? // null = geral, ou tema específico
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime?
+
+  fromUser User    @relation("DelegatedFrom", fields: [fromUserId], references: [id])
+  toUser   User    @relation("DelegatedTo", fields: [toUserId], references: [id])
+  orgUnit  OrgUnit @relation(fields: [orgUnitId], references: [id])
+
+  @@unique([fromUserId, toUserId, orgUnitId, scope])
+  @@index([toUserId, active])
+}
+
+model Label {
+  id        String   @id @default(cuid())
+  name      String
+  color     String // hex color
+  orgUnitId String
+  createdAt DateTime @default(now())
+
+  orgUnit   OrgUnit         @relation(fields: [orgUnitId], references: [id])
+  proposals ProposalLabel[]
+  issues    IssueLabel[]
+
+  @@unique([orgUnitId, name])
+}
+
+model ProposalLabel {
+  proposalId String
+  labelId    String
+  proposal   Proposal @relation(fields: [proposalId], references: [id])
+  label      Label    @relation(fields: [labelId], references: [id])
+
+  @@id([proposalId, labelId])
+}
+
+// Modelo inferido a partir do seu modelo Label
+model IssueLabel {
+  issueId String
+  labelId String
+  issue   Issue  @relation(fields: [issueId], references: [id])
+  label   Label  @relation(fields: [labelId], references: [id])
+
+  @@id([issueId, labelId])
+}
+
+model Milestone {
+  id          String    @id @default(cuid())
+  orgUnitId   String
+  title       String
+  description String?
+  dueDate     DateTime?
+  closed      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  orgUnit   OrgUnit    @relation(fields: [orgUnitId], references: [id])
+  proposals Proposal[]
+
+  @@index([orgUnitId, closed])
+}
+
+model Watch {
+  id         String   @id @default(cuid())
+  userId     String
+  targetType String // PROPOSAL | ISSUE | PR
+  targetId   String
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, targetType, targetId])
+  @@index([targetType, targetId])
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  type       NotificationType
+  title      String
+  body       String
+  targetType String?
+  targetId   String?
+  read       Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, read, createdAt])
+}
+
+model WikiPage {
+  id               String       @id @default(cuid())
+  orgUnitId        String
+  slug             String
+  title            String
+  currentVersionId String?
+  protected        Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  orgUnit        OrgUnit       @relation(fields: [orgUnitId], references: [id])
+  versions       WikiVersion[]
+  currentVersion WikiVersion?  @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  // one-to-one exige unique no campo referenciado
+  @@unique([currentVersionId])
+
+  @@unique([orgUnitId, slug])
+}
+
+model WikiVersion {
+  id         String    @id @default(cuid())
+  pageId     String
+  version    Int
+  contentMd  String
+  summary    String? // resumo da mudança
+  authorId   String
+  createdAt  DateTime  @default(now())
+
+  page       WikiPage  @relation(fields: [pageId], references: [id])
+  author     User      @relation(fields: [authorId], references: [id])
+  currentFor WikiPage? @relation("CurrentVersion")
+
+  @@unique([pageId, version])
+}
+
+model UserReputation {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  points            Int      @default(0)
+  proposalsCreated  Int      @default(0)
+  votesParticipated Int      @default(0)
+  commentsPosted    Int      @default(0)
+  consensusBuilt    Int      @default(0)
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Badge {
+  id          String    @id @default(cuid())
+  type        BadgeType
+  name        String
+  description String
+  icon        String
+  threshold   Int // pontos necessários
+  // Campo Adicionado
+  users       UserBadge[]
+}
+
+model UserBadge {
+  userId   String
+  badgeId  String
+  earnedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id])
+  badge Badge @relation(fields: [badgeId], references: [id])
+
+  @@id([userId, badgeId])
+}
+
+// --- FIM DOS NOVOS MODELOS ---
 
 model AuditLog {
   id        String   @id @default(cuid())
@@ -230,6 +474,6 @@ model AuditLog {
   metadata  Json
   createdAt DateTime @default(now())
   actor     User     @relation("ActorLogs", fields: [actorId], references: [id])
+
   @@index([createdAt])
 }
-
