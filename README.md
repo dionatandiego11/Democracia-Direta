@@ -103,7 +103,7 @@ docker -v      # Qualquer versão recente
 
 ```bash
 # Clone o repositório
-git clone <seu-repo>
+git clone https://github.com/dionatandiego11/Democracia-Direta
 cd democracia-direta
 
 # Execute o script de setup
