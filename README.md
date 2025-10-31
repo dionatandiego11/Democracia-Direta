@@ -1,7 +1,5 @@
 # 🗳️ Democracia-Direta - Guia de Setup Completo
 
-# 🗳️ Democracia-Direta
-
 **Plataforma de governança interna para partidos políticos**, inspirada no fluxo do GitHub e na filosofia Open Source. Permite propor, debater, versionar e votar ideias, programas e decisões de forma transparente e colaborativa.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
